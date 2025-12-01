@@ -27,6 +27,7 @@ STATIONS = {
 
 def build_url(date: str, units: int = 4) -> str:
     """Build the booking URL for a specific date."""
+    from urllib.parse import urlencode
     params = {
         "lang": "en",
         "date": date,
@@ -35,8 +36,7 @@ def build_url(date: str, units: int = 4) -> str:
         "redirectUrl": "https://ars-saganokanko.triplabo.jp/booking/pay",
         "currentStep": "station",
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{BASE_URL}?{query}"
+    return f"{BASE_URL}?{urlencode(params)}"
 
 
 def send_telegram(message: str) -> bool:
