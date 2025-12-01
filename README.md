@@ -108,13 +108,15 @@ docker run -d --name sagano \
 
 ## GitHub Actions (Free)
 
-The repo includes a GitHub Actions workflow that runs every 5 minutes.
+The repo includes a GitHub Actions workflow. Note: GitHub's cron is best-effort and typically runs every 15-30 minutes (not guaranteed).
 
 1. Fork this repo
 2. Go to Settings → Secrets → Actions
 3. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
 4. Edit `.github/workflows/monitor.yml` to set your dates
 5. Enable the workflow in Actions tab
+
+For more reliable monitoring, run locally or on a VPS.
 
 ## How It Works
 
