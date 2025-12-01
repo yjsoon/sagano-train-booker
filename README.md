@@ -82,7 +82,7 @@ pkill -f "monitor.py"
 | `--dates` | Required | Dates to monitor (YYYY-MM-DD) |
 | `--departure` | Torokko Saga | Departure station |
 | `--arrival` | Torokko Kameoka | Arrival station |
-| `--units` | 4 | Number of seats |
+| `--units` | 1 | Number of seats |
 | `--interval` | 60 | Seconds between checks |
 | `--status-every` | 10 | Send status update every N checks |
 | `--test` | - | Single check mode |

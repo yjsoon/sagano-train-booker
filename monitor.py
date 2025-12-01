@@ -273,7 +273,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--units",
         type=int,
-        default=4,
+        default=1,
         help="Number of seats/units",
     )
     parser.add_argument(
