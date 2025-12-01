@@ -165,12 +165,14 @@ def monitor(
     arrival: str = "Torokko Kameoka",
     units: int = 4,
     interval: int = CHECK_INTERVAL,
+    status_every: int = 10,
 ):
     """Continuously monitor the booking page."""
     print(f"Starting monitor for dates: {dates}")
     print(f"Route: {departure} → {arrival}")
     print(f"Units: {units}")
     print(f"Check interval: {interval} seconds")
+    print(f"Status update every: {status_every} checks")
     print("-" * 50)
 
     # Send startup notification
@@ -178,12 +180,15 @@ def monitor(
         f"🚂 <b>Sagano Monitor Started</b>\n\n"
         f"📅 Dates: {', '.join(dates)}\n"
         f"🛤 Route: {departure} → {arrival}\n"
-        f"👥 Seats: {units}"
+        f"👥 Seats: {units}\n\n"
+        f"📍 Source: {SOURCE}"
     )
 
     notified_slots = set()  # Track what we've already notified about
+    check_count = 0
 
     while True:
+        check_count += 1
         for date in dates:
             timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -202,18 +207,20 @@ def monitor(
 
             print(f"Slots: {', '.join(slot_summary) or 'None found'}")
 
+            url = build_url(date, units)
+
             if result["available"]:
                 # Check for new available slots we haven't notified about
                 new_slots = [s for s in result["slots"] if f"{date}-{s}" not in notified_slots]
 
                 if new_slots:
-                    url = build_url(date, units)
                     msg = (
                         f"🎉 <b>SAGANO TRAIN AVAILABLE!</b>\n\n"
                         f"📅 Date: {date}\n"
                         f"🛤 Route: {departure} → {arrival}\n"
                         f"🕐 Available: {', '.join(new_slots)}\n\n"
-                        f"🔗 <a href='{url}'>BOOK NOW</a>"
+                        f"🔗 <a href='{url}'>BOOK NOW</a>\n\n"
+                        f"📍 Source: {SOURCE}"
                     )
                     send_telegram(msg)
                     print(f"  📱 Notified about: {new_slots}")
@@ -221,6 +228,20 @@ def monitor(
                     # Mark as notified
                     for slot in new_slots:
                         notified_slots.add(f"{date}-{slot}")
+
+            # Send periodic status update
+            elif check_count % status_every == 0:
+                times = ", ".join(s["time"] for s in result["all_slots"])
+                msg = (
+                    f"📊 <b>Status Update</b>\n\n"
+                    f"📅 Date: {date}\n"
+                    f"🕐 Checked: {times}\n"
+                    f"All sold out for {units} seats.\n\n"
+                    f"🔗 <a href='{url}'>Check anyway</a>\n\n"
+                    f"📍 Source: {SOURCE}"
+                )
+                send_telegram(msg)
+                print(f"  📱 Sent status update (check #{check_count})")
 
         print("-" * 50)
         time.sleep(interval)
@@ -259,6 +280,12 @@ if __name__ == "__main__":
         type=int,
         default=CHECK_INTERVAL,
         help="Seconds between checks",
+    )
+    parser.add_argument(
+        "--status-every",
+        type=int,
+        default=10,
+        help="Send status update every N checks (default: 10 = every 10 min)",
     )
     parser.add_argument(
         "--test",
@@ -317,4 +344,4 @@ if __name__ == "__main__":
             send_telegram(msg)
             print("📱 Telegram notification sent!")
     else:
-        monitor(args.dates, args.departure, args.arrival, args.units, args.interval)
+        monitor(args.dates, args.departure, args.arrival, args.units, args.interval, args.status_every)
