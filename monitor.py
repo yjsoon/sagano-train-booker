@@ -107,47 +107,48 @@ def check_availability(
             # Take screenshot for debugging
             page.screenshot(path="latest_check.png", full_page=True)
 
-            # Find all train slot cards
-            # Looking for elements that contain time patterns and availability info
-            content = page.content()
-
-            # Look for train cards - they contain departure time, train name, and availability
-            train_cards = page.locator('[class*="card"], [class*="train"], [class*="slot"]').all()
-
-            # Alternative: find all clickable elements with time patterns
+            # Find train info by looking for divs containing train times and names
             import re
             time_pattern = re.compile(r'(\d{2}:\d{2})')
 
-            # Get all elements that look like train slots
-            all_elements = page.locator("div").all()
+            # Get all seat indicator divs (they have the seatIcon SVG)
+            seat_indicators = page.locator('div:has(> svg[class*="seatIcon"])').all()
 
-            for elem in all_elements:
+            # Get all train info cards
+            train_cards = page.locator('div:has-text("Sagano")').all()
+
+            # Find unique train entries
+            seen_trains = set()
+            for card in train_cards:
                 try:
-                    text = elem.inner_text()
-                    # Check if this looks like a train slot (has times)
+                    text = card.inner_text()
                     times = time_pattern.findall(text)
-                    if len(times) >= 2 and "Sagano" in text:
-                        # This is a train slot
-                        dep_time = times[0]
-                        is_unavailable = "Empty seat" in text or "✗" in text or "×" in text
+                    train_match = re.search(r'Sagano \d+', text)
 
-                        # Extract train name
-                        train_match = re.search(r'Sagano \d+', text)
-                        train_name = train_match.group() if train_match else "Unknown"
+                    if len(times) >= 2 and train_match:
+                        dep_time = times[0]
+                        train_name = train_match.group()
+
+                        if train_name in seen_trains:
+                            continue
+                        seen_trains.add(train_name)
+
+                        # Check if this specific card has a seatIconClose (sold out)
+                        # Go up to find the row container and check for the close icon
+                        has_close = card.locator('svg[class*="seatIconClose"]').count() > 0
+                        is_available = not has_close
 
                         slot_info = {
                             "time": dep_time,
                             "train": train_name,
-                            "available": not is_unavailable,
+                            "available": is_available,
                         }
 
-                        # Avoid duplicates
-                        if slot_info not in result["all_slots"]:
-                            result["all_slots"].append(slot_info)
+                        result["all_slots"].append(slot_info)
 
-                            if not is_unavailable:
-                                result["available"] = True
-                                result["slots"].append(f"{dep_time} ({train_name})")
+                        if is_available:
+                            result["available"] = True
+                            result["slots"].append(f"{dep_time} ({train_name})")
                 except:
                     continue
 
