@@ -304,7 +304,8 @@ if __name__ == "__main__":
                     f"😔 <b>No availability</b>\n\n"
                     f"📅 Date: {date}\n"
                     f"🕐 Checked: {slot_summary}\n"
-                    f"All sold out for {args.units} seats."
+                    f"All sold out for {args.units} seats.\n\n"
+                    f"🔗 <a href='{url}'>Check anyway</a>"
                 )
             send_telegram(msg)
             print("📱 Telegram notification sent!")
