@@ -2,16 +2,21 @@
 """Monitor Sagano train booking page for available slots."""
 
 import os
+import sys
 import time
 import requests
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 
+# Unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+SOURCE = os.getenv("SOURCE", "unknown")
 
 BASE_URL = "https://file.sagano.linktivity.io/seat/51/down"
 CHECK_INTERVAL = 60  # seconds between checks
@@ -296,7 +301,8 @@ if __name__ == "__main__":
                     f"📅 Date: {date}\n"
                     f"🛤 Route: {args.departure} → {args.arrival}\n"
                     f"🕐 Available: {', '.join(result['slots'])}\n\n"
-                    f"🔗 <a href='{url}'>BOOK NOW</a>"
+                    f"🔗 <a href='{url}'>BOOK NOW</a>\n\n"
+                    f"📍 Source: {SOURCE}"
                 )
             else:
                 slot_summary = ", ".join(f"{s['time']}" for s in result["all_slots"])
@@ -305,7 +311,8 @@ if __name__ == "__main__":
                     f"📅 Date: {date}\n"
                     f"🕐 Checked: {slot_summary}\n"
                     f"All sold out for {args.units} seats.\n\n"
-                    f"🔗 <a href='{url}'>Check anyway</a>"
+                    f"🔗 <a href='{url}'>Check anyway</a>\n\n"
+                    f"📍 Source: {SOURCE}"
                 )
             send_telegram(msg)
             print("📱 Telegram notification sent!")
