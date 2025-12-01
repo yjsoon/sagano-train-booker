@@ -1,6 +1,6 @@
 # Sagano Train Booker Telegram Bot Maker
 
-Monitor the Sagano Scenic Railway booking page and get Telegram notifications when seats become available. Seats often open up the day before travel, as cancellations are penalty-free until then.
+Monitor the [Sagano Scenic Railway](https://www.sagano-kanko.co.jp/en/) booking page and get Telegram notifications when seats become available. Seats often open up the day before travel, as cancellations are penalty-free until then.
 
 ## Quick Start
 
