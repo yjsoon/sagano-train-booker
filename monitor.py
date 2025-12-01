@@ -288,9 +288,9 @@ if __name__ == "__main__":
             if result["error"]:
                 print(f"Error: {result['error']}")
 
-            # Send notification if available
+            # Send notification
+            url = build_url(date, args.units)
             if result["available"]:
-                url = build_url(date, args.units)
                 msg = (
                     f"🎉 <b>SAGANO TRAIN AVAILABLE!</b>\n\n"
                     f"📅 Date: {date}\n"
@@ -298,9 +298,15 @@ if __name__ == "__main__":
                     f"🕐 Available: {', '.join(result['slots'])}\n\n"
                     f"🔗 <a href='{url}'>BOOK NOW</a>"
                 )
-                send_telegram(msg)
-                print("📱 Telegram notification sent!")
             else:
-                print(f"No availability for {date}")
+                slot_summary = ", ".join(f"{s['time']}" for s in result["all_slots"])
+                msg = (
+                    f"😔 <b>No availability</b>\n\n"
+                    f"📅 Date: {date}\n"
+                    f"🕐 Checked: {slot_summary}\n"
+                    f"All sold out for {args.units} seats."
+                )
+            send_telegram(msg)
+            print("📱 Telegram notification sent!")
     else:
         monitor(args.dates, args.departure, args.arrival, args.units, args.interval)
