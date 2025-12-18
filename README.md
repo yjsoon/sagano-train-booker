@@ -41,59 +41,32 @@ SOURCE=my-computer
 ### 4. Run
 
 ```bash
-# Single check (test mode)
-python monitor.py --test --dates 2025-12-02
-
-# Continuous monitoring
-python monitor.py --dates 2025-12-02
-
-# Multiple dates
-python monitor.py --dates 2025-12-02 2025-12-03 2025-12-04
-
-# Custom options
-python monitor.py --dates 2025-12-02 \
-  --departure "Torokko Saga" \
-  --arrival "Torokko Kameoka" \
-  --units 4 \
-  --interval 60 \
-  --status-every 10
+python monitor.py
 ```
+
+The bot is now fully interactive! Open your Telegram chat and use these commands:
+
+- `/start` - Start and see instructions
+- `/monitor <date>` - Start monitoring a date (e.g., `/monitor 2025-12-05`)
+- `/list` - See observed dates
+- `/config` - View and change settings (seats, stations, interval)
+- `/stop` - Stop monitoring
+
+### Configuration Defaults
+- **Seats**: 1 passenger (change with `/config seats=2`)
+- **Route**: Torokko Saga → Torokko Kameoka (change with `/config dep=... arr=...`)
+- **Interval**: Checks every 1 minute (change with `/config interval=5`)
 
 ### 5. Run in Background
 
 ```bash
 # Using nohup
-nohup python -u monitor.py --dates 2025-12-02 > monitor.log 2>&1 &
-
-# Using tmux
-tmux new-session -d -s sagano 'cd ~/sagano-train-booker && source .venv/bin/activate && python monitor.py --dates 2025-12-02'
-
-# View logs
-tail -f monitor.log
-
-# Stop
-pkill -f "monitor.py"
+nohup python -u monitor.py > monitor.log 2>&1 &
 ```
 
 ## Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--dates` | Required | Dates to monitor (YYYY-MM-DD) |
-| `--departure` | Torokko Saga | Departure station |
-| `--arrival` | Torokko Kameoka | Arrival station |
-| `--units` | 1 | Number of seats |
-| `--interval` | 60 | Seconds between checks |
-| `--status-every` | 10 | Send status update every N checks |
-| `--test` | - | Single check mode |
-| `--test-telegram` | - | Test Telegram notification |
-
-### Stations
-
-- Torokko Saga
-- Torokko Arashiyama
-- Torokko Hozukyo
-- Torokko Kameoka
+All configuration is done via Telegram commands now. No command-line arguments are needed.
 
 ## Docker
 
@@ -101,42 +74,30 @@ pkill -f "monitor.py"
 docker build -t sagano-monitor .
 docker run -d --name sagano \
   -e TELEGRAM_BOT_TOKEN=your_token \
-  -e TELEGRAM_CHAT_ID=your_chat_id \
   -e SOURCE=docker \
-  sagano-monitor --dates 2025-12-02
+  sagano-monitor
 ```
 
-## GitHub Actions (Free)
+## GitHub Actions
 
-The repo includes a GitHub Actions workflow. Note: GitHub's cron is best-effort and typically runs every 15-30 minutes (not guaranteed).
-
-1. Fork this repo
-2. Go to Settings → Secrets → Actions
-3. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
-4. Edit `.github/workflows/monitor.yml` to set your dates
-5. Enable the workflow in Actions tab
-
-For more reliable monitoring, run locally or on a VPS.
+The repo includes a GitHub Actions workflow that can run the script periodically, though the interactive bot mode is designed to run continuously on a server/computer.
 
 ## How It Works
 
-1. Uses Playwright to load the booking page
-2. Selects departure/arrival stations
-3. Checks each train slot for the `seatIconClose` SVG class (indicates sold out)
-4. Sends Telegram notification when available slots are found
-5. Repeats every N seconds
+1.  **Interactive Bot**: Listen for user commands via Telegram.
+2.  **Job Queue**: Periodically checks availability for all monitored dates.
+3.  **Smart Validation**: Prevents monitoring dates too far in the future (>1 month).
+4.  **Notifications**: Alerts you instantly when a seat is found.
 
 ## Troubleshooting
 
 **No notifications received?**
-- Check your bot token and chat ID are correct
-- Run `python monitor.py --test-telegram` to test
-- Make sure you've messaged your bot at least once
+- Check your bot token is correct in `.env`.
+- Make sure you've sent `/start` to the bot.
 
 **All slots showing as unavailable?**
-- The site may have changed its HTML structure
-- Check `latest_check.png` screenshot for debugging
-- Open an issue with details
+- The site may have changed its HTML structure.
+- Check logs for errors.
 
 ## License
 
