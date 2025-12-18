@@ -65,87 +65,6 @@ class UserConfig:
 
 # ... (skip lines) ...
 
-async def global_check_job(context: ContextTypes.DEFAULT_TYPE):
-    """
-    Runs every 60 seconds. Iterates through all users and checks their dates.
-    """
-    if not user_configs:
-        return
-
-    # Filter for active users (have dates)
-    active_chats = [cid for cid, cfg in user_configs.items() if cfg.monitored_dates]
-    
-    if not active_chats:
-        return
-
-    logger.info(f"Running check cycle for {len(active_chats)} users")
-
-    for chat_id in active_chats:
-        config = user_configs[chat_id]
-        now = datetime.now()
-
-        # Check if it's time to run for this user
-        if (now - config.last_check_time) < timedelta(minutes=config.check_interval):
-            continue
-
-        config.last_check_time = now
-        
-        # Cleanup past dates
-        today_str = now.strftime("%Y-%m-%d")
-        to_remove = [d for d in config.monitored_dates if d < today_str]
-        for d in to_remove:
-            config.monitored_dates.remove(d)
-            await context.bot.send_message(chat_id, f"📅 Date {d} has passed. Removing from monitor.")
-        
-        if not config.monitored_dates:
-            continue
-
-        # Check each date
-        for date in list(config.monitored_dates):
-            result = await check_availability(
-                date, config.departure, config.arrival, config.units
-            )
-            
-            if result["error"]:
-                logger.error(f"Error checking {date} for {chat_id}: {result['error']}")
-                continue
-
-            # Notify if new slots
-            if result["available"]:
-                # Filter slots we already notified
-                new_slots = [
-                    s for s in result["slots"] 
-                    if f"{date}-{s}" not in config.notified_slots
-                ]
-
-                if new_slots:
-                    url = build_url(date, config.units)
-                    msg = (
-                        f"🎉 <b>AVAILABLE!</b>\n"
-                        f"📅 {date}\n"
-                        f"⏰ {', '.join(new_slots)}\n"
-                        f"🔗 <a href='{url}'>BOOK NOW</a>"
-                    )
-                    await context.bot.send_message(chat_id, msg, parse_mode=ParseMode.HTML)
-                    
-                    # Mark notified
-                    for slot in new_slots:
-                        config.notified_slots.add(f"{date}-{slot}")
-
-            # (Logic for status update logic can remain similar or be adjusted if needed, 
-            # but user didn't ask to change that drastically)
-        
-        # Send a summary for the user if time is right
-        if (now - config.last_status_time) > timedelta(minutes=config.status_every):
-            # Compile summary
-            summary_lines = []
-            for date in config.monitored_dates:
-                summary_lines.append(f"Checked {date}: Still monitoring...")
-            
-            if summary_lines:
-                msg = f"⏱ <b>Hourly Check-in</b>\n" + "\n".join(summary_lines)
-                await context.bot.send_message(chat_id, msg, parse_mode=ParseMode.HTML)
-                config.last_status_time = now
 
 # In-memory storage: chat_id -> UserConfig
 # In a real production app, use a database (SQLite/Postgres)
@@ -285,6 +204,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /monitor <code>YYYY-MM-DD</code> - Start monitoring checks for a specific date.\n"
         "• /stop <code>[YYYY-MM-DD]</code> - Stop monitoring a date (or stop all if no date provided).\n"
         "• /list - See all dates you are currently watching.\n"
+        "• /check - Manually trigger a check right now.\n"
         "• /config - View your current settings (interval, route, seats).\n"
         "• <code>/config seats=2</code> - Set number of passengers.\n"
         "• <code>/config dep=arashiyama</code> - Set departure station.\n"
@@ -331,12 +251,30 @@ async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         config.monitored_dates.add(date_str)
         
-        # Schedule the job if not already running effectively
-        # In this simple design, we have one global ticker that checks everyone's configs,
-        # OR we could schedule a job per user. 
-        # Simpler: One repeating job that iterates all users.
+        await update.message.reply_text(f"✅ Added <b>{date_str}</b>. Checking right now...", parse_mode=ParseMode.HTML)
         
-        await update.message.reply_text(f"✅ Added <b>{date_str}</b> to monitor list.", parse_mode=ParseMode.HTML)
+        # Trigger immediate check
+        result = await check_availability(date_str, config.departure, config.arrival, config.units)
+        
+        if result["error"]:
+             await update.message.reply_text(f"❌ Error during check: {result['error']}")
+        elif result["available"]:
+             url = build_url(date_str, config.units)
+             msg = (
+                 f"🎉 <b>It's AVAILABLE!</b>\n"
+                 f"📅 {date_str}\n"
+                 f"⏰ {', '.join(result['slots'])}\n"
+                 f"🔗 <a href='{url}'>BOOK NOW</a>"
+             )
+             await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+             for slot in result["slots"]:
+                 config.notified_slots.add(f"{date_str}-{slot}")
+        else:
+             await update.message.reply_text(f"ℹ️ No seats found yet. I'll keep checking every {config.check_interval} min.")
+        
+        # Reset timers so we don't get a duplicate background check/status immediately
+        config.last_check_time = datetime.now()
+        config.last_status_time = datetime.now()
         
     except ValueError:
         await update.message.reply_text("❌ Invalid format. Use YYYY-MM-DD.")
@@ -361,6 +299,51 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"⚠️ You weren't monitoring {date_str}.")
 
+async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manually trigger a check for all monitored dates."""
+    chat_id = update.effective_chat.id
+    config = get_or_create_config(chat_id)
+    
+    if not config.monitored_dates:
+        await update.message.reply_text("⚠️ You aren't monitoring any dates yet. Use /monitor first.")
+        return
+
+    await update.message.reply_text(f"🔎 Checking {len(config.monitored_dates)} date(s)...")
+
+    found_any = False
+    for date in sorted(list(config.monitored_dates)):
+        result = await check_availability(date, config.departure, config.arrival, config.units)
+        
+        if result["error"]:
+            await update.message.reply_text(f"❌ Error checking {date}: {result['error']}")
+            continue
+            
+        if result["available"]:
+            found_any = True
+            url = build_url(date, config.units)
+            msg = (
+                f"🎉 <b>AVAILABLE!</b>\n"
+                f"📅 {date}\n"
+                f"⏰ {', '.join(result['slots'])}\n"
+                f"🔗 <a href='{url}'>BOOK NOW</a>"
+            )
+            await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+            # We don't necessarily silence future notifications here, 
+            # but usually we want to add to notified list so auto-check doesn't spam.
+            for slot in result["slots"]:
+                 config.notified_slots.add(f"{date}-{slot}")
+        else:
+            # Optional: Report negative result?
+            # User probably wants to know it ran.
+            await update.message.reply_text(f"ℹ️ {date}: Sold out.")
+            
+    if not found_any:
+        await update.message.reply_text("Done. I'll notify you if anything changes!")
+
+    # Reset timers since we just checked
+    config.last_check_time = datetime.now()
+    config.last_status_time = datetime.now()
+
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List monitored dates."""
     chat_id = update.effective_chat.id
@@ -373,6 +356,10 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dates_list = sorted(list(config.monitored_dates))
     msg = "📅 <b>Monitored Dates:</b>\n" + "\n".join(f"- {d}" for d in dates_list)
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+# ... (skip to helper function updates if any, or next chunk) ...
+
+# In global_check_job (we need to target the next replacement chunk for this)
 
 async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View or update configuration."""
@@ -545,7 +532,7 @@ async def global_check_job(context: ContextTypes.DEFAULT_TYPE):
                 summary_lines.append(f"Checked {date}: Still monitoring...")
             
             if summary_lines:
-                msg = f"⏱ <b>Hourly Check-in</b>\n" + "\n".join(summary_lines)
+                msg = f"⏱ <b>Periodic Check-in</b>\n" + "\n".join(summary_lines)
                 await context.bot.send_message(chat_id, msg, parse_mode=ParseMode.HTML)
                 config.last_status_time = now
 
@@ -557,6 +544,7 @@ async def post_init(application: Application):
         ("monitor", "Monitor a date (format: YYYY-MM-DD)"),
         ("stop", "Stop monitoring a date"),
         ("list", "Show currently monitored dates"),
+        ("check", "Manually trigger a check"),
         ("config", "View or change settings"),
         ("help", "Show full help message"),
     ])
@@ -575,6 +563,7 @@ def main():
     application.add_handler(CommandHandler("monitor", monitor_command))
     application.add_handler(CommandHandler("stop", stop_command))
     application.add_handler(CommandHandler("list", list_command))
+    application.add_handler(CommandHandler("check", check_command))
     application.add_handler(CommandHandler("config", config_command))
 
     # Job Queue
