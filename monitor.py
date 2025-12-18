@@ -256,6 +256,10 @@ async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Trigger immediate check
         result = await check_availability(date_str, config.departure, config.arrival, config.units)
         
+        # Calculate next check time
+        next_check = datetime.now() + timedelta(minutes=config.check_interval)
+        next_check_str = next_check.strftime("%H:%M")
+        
         if result["error"]:
              await update.message.reply_text(f"❌ Error during check: {result['error']}")
         elif result["available"]:
@@ -264,13 +268,14 @@ async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  f"🎉 <b>It's AVAILABLE!</b>\n"
                  f"📅 {date_str}\n"
                  f"⏰ {', '.join(result['slots'])}\n"
-                 f"🔗 <a href='{url}'>BOOK NOW</a>"
+                 f"🔗 <a href='{url}'>BOOK NOW</a>\n\n"
+                 f"<i>Next check at {next_check_str}</i>"
              )
              await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
              for slot in result["slots"]:
                  config.notified_slots.add(f"{date_str}-{slot}")
         else:
-             await update.message.reply_text(f"ℹ️ No seats found yet. I'll keep checking every {config.check_interval} min.")
+             await update.message.reply_text(f"ℹ️ No seats found yet. Next check at {next_check_str}.")
         
         # Reset timers so we don't get a duplicate background check/status immediately
         config.last_check_time = datetime.now()
@@ -311,6 +316,11 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔎 Checking {len(config.monitored_dates)} date(s)...")
 
     found_any = False
+    
+    # Calculate next check time
+    next_check = datetime.now() + timedelta(minutes=config.check_interval)
+    next_check_str = next_check.strftime("%H:%M")
+
     for date in sorted(list(config.monitored_dates)):
         result = await check_availability(date, config.departure, config.arrival, config.units)
         
@@ -325,7 +335,8 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🎉 <b>AVAILABLE!</b>\n"
                 f"📅 {date}\n"
                 f"⏰ {', '.join(result['slots'])}\n"
-                f"🔗 <a href='{url}'>BOOK NOW</a>"
+                f"🔗 <a href='{url}'>BOOK NOW</a>\n\n"
+                f"<i>Next check at {next_check_str}</i>"
             )
             await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
             # We don't necessarily silence future notifications here, 
@@ -338,7 +349,7 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"ℹ️ {date}: Sold out.")
             
     if not found_any:
-        await update.message.reply_text("Done. I'll notify you if anything changes!")
+        await update.message.reply_text(f"Done. Next check at {next_check_str}.")
 
     # Reset timers since we just checked
     config.last_check_time = datetime.now()
@@ -369,7 +380,7 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         msg = (
             "⚙️ <b>Current Configuration:</b>\n\n"
-            f"Interval: {config.check_interval}s\n"
+            f"Interval: {config.check_interval} min\n"
             f"Status Update: Every {config.status_every} min\n"
             f"Route: {config.departure} → {config.arrival}\n"
             f"Seats: {config.units}\n\n"
@@ -387,6 +398,8 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Parse parameters
+    should_check = False
+    
     for arg in context.args:
         # Interval
         if arg.startswith("interval="):
@@ -408,6 +421,7 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("⚠️ Seats must be 1+.")
                     continue
                 config.units = val
+                should_check = True
                 await update.message.reply_text(f"✅ Seat count set to {val}.")
             except ValueError:
                 await update.message.reply_text("❌ Invalid seat count.")
@@ -425,9 +439,10 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if match:
                 config.departure = match
+                should_check = True
                 await update.message.reply_text(f"✅ Departure set to {match}.")
             else:
-                formatted_stations = ", ".join(STATIONS.values())
+                formatted_stations = ", ".join([f"<code>{s}</code>" for s in STATIONS.keys()])
                 await update.message.reply_text(f"❌ Station not found. Options: {formatted_stations}")
 
         elif arg.startswith("arr=") or arg.startswith("end="):
@@ -440,10 +455,16 @@ async def config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if match:
                 config.arrival = match
+                should_check = True
                 await update.message.reply_text(f"✅ Arrival set to {match}.")
             else:
-                formatted_stations = ", ".join(STATIONS.values())
+                formatted_stations = ", ".join([f"<code>{s}</code>" for s in STATIONS.keys()])
                 await update.message.reply_text(f"❌ Station not found. Options: {formatted_stations}")
+
+    # If significant settings changed and we are monitoring dates, trigger a check
+    if should_check and config.monitored_dates:
+        await update.message.reply_text("🔄 Settings changed. Checking availability...")
+        await check_command(update, context)
 
 # --- Job Queue ---
 
